@@ -29,8 +29,12 @@ def update_end_df(df, end_df):
 	return end_df.alias('s1').join(new_end_rows.alias('s2'), col('s1.key') == col('s2.key'), 'left') \
 		.withColumn('new_operation', coalesce(col('s2.operation'), col('s1.operation'))) \
 		.withColumn('new_ts', coalesce(col('s2.ts'), col('s1.ts'))) \
-		.withColumn('new_updating_value', coalesce(col('s2.updating_value'), col('s1.updating_value'))) \
-		.withColumn('new_inserting_value', coalesce(col('s2.inserting_value'), col('s1.inserting_value'))) \
+		.withColumn('new_updating_value', 
+                when((col('s2.operation').isNotNull()), col('s2.updating_value'))
+                .otherwise(col('s1.updating_value'))) \
+		.withColumn('new_inserting_value', 
+                when((col('s2.operation').isNotNull()), col('s2.inserting_value'))
+                .otherwise(col('s1.inserting_value'))) \
 		.select(col('new_operation').alias('operation'), 
 				col('s1.key').alias('key'), 
 				col('new_ts').alias('ts'), 
