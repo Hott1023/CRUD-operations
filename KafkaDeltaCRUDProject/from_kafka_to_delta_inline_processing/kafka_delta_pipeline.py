@@ -16,17 +16,26 @@ INSERT_COMMAND = 'i'
 UPDATE_COMMAND = 'u'
 DELETE_COMMAND = 'd'
 UPSERT_COMMAND = 'ups'
+
 SCHEMA_REGISTRY_ADDR = "http://schema-registry:8081"
 TOPIC = 'CRUD_pipeline'
+HDFS_PATH = f'http://namenode:9870/'
 BOOTSTRAP_SERVER = 'broker:29092'
-delta_table_name = f'{TOPIC}_delta_table'
-checkpointLocation = f"/checkpoints/delta_{TOPIC}"
-delta_table_location = f'hdfs://namenode:9000/delta-tables/{delta_table_name}/'
+
 IS_DEBUG = True
 
 
 class KafkaDeltaPipelineClass:
-    def __init__(self):
+    def __init__(self, topic, hdfs_path, bootstrap_server, schema_registry_addr):
+        self.topic = topic
+        self.hdfs_path = hdfs_path
+        self.schema_registry_conf = {'url': schema_registry_addr}
+        self.bootstrap_server = bootstrap_server
+
+        self.delta_table_name = f'{self.topic}_delta_table'
+        self.checkpointLocation = f"/checkpoints/delta_{self.topic}"
+        self.delta_table_location = f'{self.hdfs_path}delta-tables/{self.delta_table_name}/'
+
         self.key_schema = None
         self.value_schema = None
         self.load_kafka_schemas()
@@ -50,10 +59,9 @@ class KafkaDeltaPipelineClass:
         self.prepare_delta_uploading_conditions_and_sets()
 
     def load_kafka_schemas(self):
-        schema_registry_conf = {'url': SCHEMA_REGISTRY_ADDR}
-        schema_registry_client = SchemaRegistryClient(schema_registry_conf)
-        self.key_schema = schema_registry_client.get_latest_version(f'{TOPIC}-key').schema.schema_str
-        self.value_schema = schema_registry_client.get_latest_version(f'{TOPIC}-value').schema.schema_str
+        schema_registry_client = SchemaRegistryClient(self.schema_registry_conf)
+        self.key_schema = schema_registry_client.get_latest_version(f'{self.topic}-key').schema.schema_str
+        self.value_schema = schema_registry_client.get_latest_version(f'{self.topic}-value').schema.schema_str
 
     def load_kafka_schema_fields(self):
         self.key_fields = set(map(lambda field: field['name'], json.loads(self.key_schema)['fields']))
@@ -68,21 +76,21 @@ class KafkaDeltaPipelineClass:
 
     def init_delta_table(self):
         self.deltaTable = DeltaTable.createIfNotExists(self.spark) \
-            .tableName(delta_table_name) \
+            .tableName(self.delta_table_name) \
             .addColumn('_is_row_deleted', 'BOOLEAN') \
             .addColumn('ts', 'TIMESTAMP')
         for key_field in self.key_fields:
             self.deltaTable = self.deltaTable.addColumn(key_field, 'STRING')
         for value_field in self.value_fields:
             self.deltaTable = self.deltaTable.addColumn(value_field, 'STRING')
-        self.deltaTable = self.deltaTable.location(delta_table_location).execute()
+        self.deltaTable = self.deltaTable.location(self.delta_table_location).execute()
 
     def get_kafka_stream(self):
         return self.spark \
             .readStream \
             .format('kafka') \
-            .option("kafka.bootstrap.servers", BOOTSTRAP_SERVER) \
-            .option("subscribe", TOPIC) \
+            .option("kafka.bootstrap.servers", self.bootstrap_server) \
+            .option("subscribe", self.topic) \
             .option("mode", "PERMISSIVE") \
             .option("startingOffsets", 'earliest') \
             .load()
@@ -349,20 +357,22 @@ class KafkaDeltaPipelineClass:
                 rebuild_df.show()
                 self.deltaTable.toDF().show()
 
-        stream.writeStream \
+        return stream.writeStream \
             .format("delta") \
             .foreachBatch(crud_operation_delta) \
             .outputMode("update") \
-            .option('checkpointLocation', checkpointLocation) \
-            .start(delta_table_location) \
-            .awaitTermination()
+            .option('checkpointLocation', self.checkpointLocation) \
+            .start(self.delta_table_location)
 
     def start_pipeline(self):
-        self.upload_stream_to_delta(self.get_represent_kafka_stream())
+        return self.upload_stream_to_delta(self.get_represent_kafka_stream())
 
 
 def main():
-    KafkaDeltaPipelineClass().start_pipeline()
+    KafkaDeltaPipelineClass(topic=TOPIC, hdfs_path=HDFS_PATH,
+                            bootstrap_server=BOOTSTRAP_SERVER,
+                            schema_registry_addr=SCHEMA_REGISTRY_ADDR) \
+        .start_pipeline().awaitTermination()
 
 
 if __name__ == '__main__':
