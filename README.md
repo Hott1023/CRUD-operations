@@ -4,27 +4,41 @@ Execution of CRUD operations by Spark
 ## Узлы Docker контейнера и их порты
 ### Узлы работы со Spark
 spark-master: 7077
+
 spark-worker-1: 9081
 ### Узлы работы с Kafka и SchemaRegistry
 kafka-control-center: 9021
+
 broker: 9092
+
 schema-registry: 8081
+
 zookeeper: 2181
+
 kafka-tools
 ### Узлы работы с HDFS
 namenode: 9870
+
 datanode: 9864
+
 resourcemanager
+
 nodemanager1
+
 historyserver
+
 ### Узлы работы с Hive
 hive-server: 10000
+
 hive-metastore: 9083
+
 hive-metastore-postgresql
+
 presto-coordinator: 8089
 
 ## Команда параметры запсука скриптов:
 Для запуска командного окна pyspark использовалась команда
+
 ```
 /spark/bin/pyspark --master spark://spark-master:7077 --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.0,org.apache.spark:spark-avro_2.12:3.3.0,io.delta:delta-core_2.12:2.2.0 --conf 'spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog' --conf 'spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension' --conf 'spark.hadoop.parquet.enable.summary-metadata=false'
 ```
